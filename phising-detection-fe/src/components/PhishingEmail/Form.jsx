@@ -12,15 +12,21 @@ const Form = (props) => {
     const { name, value } = e.target;
     setFormData({
       ...formData,
-      [name]: value,
+      [name]: e.target.files ? e.target.files[0] : value,
     });
-    console.log(formData);
   };
   const handleSubmitForm = (e) => {
     e.preventDefault();
+    // Content-Type: multipart/form-data => FormData
+    const formDataSend = new FormData();
+    if (formData.file_name) {
+      formDataSend.append("file_name", formData.file_name);
+    }
     axios
-      .post("http://127.0.0.1:8000/api/predict/", {
-        input: formData, // Dữ liệu đầu vào
+      .post("http://127.0.0.1:8000/api/predict/", formDataSend, {
+        headers: {
+          "Content-Type": "multipart/form-data", // Định dạng multipart/form-data
+        },
       })
       .then((response) => {
         console.log("Prediction result:", response.data.prediction);

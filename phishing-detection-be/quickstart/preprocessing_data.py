@@ -5,35 +5,64 @@ from nltk.corpus import stopwords
 from nltk.corpus import wordnet
 from nltk.stem.wordnet import WordNetLemmatizer
 from gensim.models import Word2Vec
+from gensim.parsing.preprocessing import *
 import numpy as np
 import pandas as pd
+from email import message_from_binary_file
+from email.policy import default
+from sklearn.preprocessing import StandardScaler
+
+stopWords = nltk.corpus.stopwords
+stopWords = stopWords.words("english")
+stopWords.extend(["nbsp", "font", "sans", "serif", "bold", "arial", "verdana", "helvetica", "http", "https", "www", "html", "enron", "margin", "spamassassin"])
+
+
+def read_data(file):
+    try:
+        # Đọc file đúng cách
+        with file.open(mode="rb") as f:
+            email_message = message_from_binary_file(f, policy=default)
+
+        # Kiểm tra nếu email có phần body
+        if email_message.is_multipart():
+            # Email có nhiều phần (multipart), lấy phần plain text
+            for part in email_message.walk():
+                content_type = part.get_content_type()
+                print('content_type', content_type)
+                disposition = part.get("Content-Disposition", None)
+                
+                # Bỏ qua file đính kèm
+                if disposition is not None:
+                    continue
+                
+                # Lấy nội dung text/html hoặc text/plain
+                if content_type == "text/plain":
+                    print(part.get_payload(decode=True).decode("utf-8"))
+                    return part.get_payload(decode=True).decode("utf-8")
+                elif content_type == "text/html":
+                    return parse_html(part.get_payload(decode=True).decode("utf-8"))
+        else:
+            # Email không có nhiều phần, lấy nội dung trực tiếp
+            return email_message.get_payload(decode=True).decode("utf-8")
+    except Exception as e:
+        print(f"Error parsing email body: {e}")
+        return None
 
 def preprocessing_data(input):
-    # Xóa các thẻ HTML
-    output = clean_html(input)
-    
-    # Xóa các ký tự đặc biệt
-    output = clean_text(output)
-    
     # Thay thế email bằng <emailaddress>
-    output = replace_email_address(output)
+    preprocessed_data = replace_email_address(input)
     
     # Thay thế URL bằng <urladdress>
-    output = replace_url(output)
+    preprocessed_data = replace_url(preprocessed_data)
     
-    # Tokenize
-    token_list = tokenize(output)
-    
-    # Loại bỏ stop words
-    token_list = remove_stopwords(token_list)
-    
-    # Lấy từ gốc
-    token_list = lemmatize(token_list)
-    
+    token_list = preprocess_string(preprocessed_data, filters=CUSTOM_FILTERS)
+  
     word2vec = word2vec_features([token_list], vector_size=100, min_count=1)
 
-    return word2vec['word2vec_train'][0]
-
+    scaler = StandardScaler()
+    word2vec_result = scaler.fit_transform(word2vec['word2vec_train'])
+    return np.array(word2vec_result).reshape(-1, 100)
+    
 def filter_vocab_words(text, vocabulary):
     return [word for word in text if word in vocabulary]
 
@@ -61,10 +90,10 @@ def word2vec_features(text_col_train, vector_size=100, min_count=5, max_vocab_si
     print('vocab: ', vocab)
     # filter the words that are not in the vocabulary
     filtered_col_train = filter_vocab_words(text_col_train[0], vocab)
-    print('fil: ', filtered_col_train)
+    
     # get the mean vector of the words in the email
     col_with_means_train = get_mean_vector(filtered_col_train, model) 
-    print(col_with_means_train)
+    
     word2vec_features_train = pd.DataFrame(col_with_means_train.tolist())
     
     output['vectorizer'] = model
@@ -72,14 +101,29 @@ def word2vec_features(text_col_train, vector_size=100, min_count=5, max_vocab_si
 
     return output
 
-def clean_html(text):
-    return BeautifulSoup(text, "html.parser").get_text()
+def parse_html(input_string):
+    soup = BeautifulSoup(input_string, 'lxml')
+        
+    inline_tag_names = ['a','abbr','acronym','b','bdo','button','cite','code',
+                       'dfn','em','i','kbd','label','output','q','samp','small',
+                       'span','strong','sub','sup','time','var']
+    
+    inline_tags = soup.find_all(inline_tag_names)
+        
+    if inline_tags:
+        for tag in inline_tags:
+            if tag.name=='a':
+                url = tag.get('href')
+                if url:
+                    tag.append("<" + url + ">")
+                    
+            tag.unwrap()
 
-
-def clean_text(text):
-    text = re.sub(r'\s+', ' ', text)  # Loại bỏ khoảng trắng thừa
-    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)  # Loại bỏ ký tự đặc biệt
-    return text.lower().strip()  # Đưa về chữ thường và loại bỏ khoảng trắng đầu/cuối
+        new_soup = BeautifulSoup(str(soup), 'lxml')        
+        text = new_soup.get_text('\n', strip=True)
+    else:
+        text = soup.get_text('\n', strip=True)
+    return text
 
 def replace_email_address(text):
     output_string = re.sub(r'\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Z|a-z]{2,})\b', '<emailaddress>', text)
@@ -91,29 +135,8 @@ def replace_url(text):
 
     return output_string
 
-def tokenize(text):
-    lowercase = text.lower()
-    token_list = nltk.word_tokenize(lowercase)
-    clean_list = [word for word in token_list if len(re.findall(r'^[a-zA-Z0-9]+-?[\w-]*$', word)) == 1]
-    
-    return clean_list
-
-def remove_stopwords(tokenized_text):
-    stop_words = stopwords.words('english')
-    clean_list = [word for word in tokenized_text if word not in stop_words]
-    
-    return clean_list
-
-def lemmatize(token_list):
-    lemmatizer = WordNetLemmatizer()
-    tagged_list = nltk.pos_tag(token_list)
-    
-    lemmatized_list = [lemmatizer.lemmatize(word)
-                       if get_wordnet_pos(tag) is None
-                       else lemmatizer.lemmatize(word, pos=get_wordnet_pos(tag))
-                       for word, tag in tagged_list]
-    
-    return lemmatized_list
+def remove_custom_stopwords(p):
+    return remove_stopwords(p, stopwords=stopWords)
 
 def get_wordnet_pos(treebank_tag):
     if treebank_tag.startswith('J'):
@@ -126,23 +149,17 @@ def get_wordnet_pos(treebank_tag):
         return wordnet.ADV
     else:
         return None
-    
-def santize_whitespace(text):
-    lines = text.split('\n')
-    for index, line  in enumerate(lines):
-        if line == '.':
-            lines.remove(line)
-            for i in range(1, len(lines)): # check for lines that contain text
-                if (lines[index-i] != ''):
-                    lines[index-i] += '.'
-                    break
-                    
-    output_string = '\n'.join(lines)
-    
-    return output_string.strip()
+def lemmatize(text):
+    lemmatizer = WordNetLemmatizer()
+    tokens = nltk.word_tokenize(text)
+    tagged_tokens = nltk.pos_tag(tokens)
 
-def sanitize_addresses(input_string):
-    less = re.sub(r'<+', '<', input_string)
-    more = re.sub(r'>+', '>', less)
-    
-    return more
+    lemmatized_tokens = [
+        lemmatizer.lemmatize(word, pos=get_wordnet_pos(tag))
+        if get_wordnet_pos(tag)
+        else lemmatizer.lemmatize(word)
+        for word, tag in tagged_tokens
+    ]
+    return ' '.join(lemmatized_tokens)
+
+CUSTOM_FILTERS = [lambda x: x.lower(), strip_tags, strip_punctuation, strip_multiple_whitespaces, strip_numeric, remove_custom_stopwords, remove_stopwords, strip_short, lemmatize]

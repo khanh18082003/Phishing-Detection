@@ -1,16 +1,17 @@
 const MailForm = (props) => {
   return (
     <form action="" method="POST" onSubmit={props.handleSubmitForm}>
-      <label htmlFor="email" className="block mb-2">
-        Email Content:
+      <label htmlFor="file" className="block mb-2 mt-4">
+        Attach File (.eml):
       </label>
-      <textarea
-        name="emailContent"
-        id="email"
-        placeholder="Enter body part of email"
+      <input
+        type="file"
+        id="file"
+        name="file_name"
         onChange={props.handleChange}
-        className="block w-full h-[150px] rounded-md outline-none px-3 py-2"
-      ></textarea>
+        accept=".eml"
+        required
+      />
       <input
         type="submit"
         value={"Check"}
