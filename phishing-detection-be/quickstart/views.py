@@ -6,7 +6,7 @@ import joblib
 import numpy as np
 # Create your views here.
 # Load mô hình của bạn
-# model = joblib.load("/home/khanhnguyen/Public/workspace/python_3.10/thesis-phishing-email-detection/fcnn_model.pkl")
+model = joblib.load("/home/khanhnguyen/Public/workspace/python_3.10/project-phishing-email-detection/DNN_model.pkl")
 
 @api_view(['GET'])
 def getRoutes(request):
@@ -29,7 +29,8 @@ def predict_view(request):
     print(preprosscessed_data)
     
     # Xử lý và dự đoán từ mô hình
-    # prediction = model.predict([preprosscessed_data])
-    # print(prediction)
+    prediction = model.predict([preprosscessed_data])
+    print(prediction)
     # Trả kết quả về cho client
-    return Response({"prediction": "100", "file": ""})
+    return Response({"prediction": prediction[0][0], "file": ""})
+

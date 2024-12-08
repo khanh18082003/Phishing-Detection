@@ -43,7 +43,11 @@ def read_data(file):
                     return parse_html(part.get_payload(decode=True).decode("utf-8"))
         else:
             # Email không có nhiều phần, lấy nội dung trực tiếp
-            return email_message.get_payload(decode=True).decode("utf-8")
+            content_type = email_message.get_content_type()
+            if content_type == "text/plain":
+                return email_message.get_payload(decode=True).decode("utf-8")
+            elif content_type == "text/html":
+                return parse_html(email_message.get_payload(decode=True).decode("utf-8"))
     except Exception as e:
         print(f"Error parsing email body: {e}")
         return None
@@ -57,11 +61,13 @@ def preprocessing_data(input):
     
     token_list = preprocess_string(preprocessed_data, filters=CUSTOM_FILTERS)
   
-    word2vec = word2vec_features([token_list], vector_size=100, min_count=1)
+    word2vec_model = Word2Vec.load('/home/khanhnguyen/Public/workspace/python_3.10/project-phishing-email-detection/word2vec_model.model')
 
-    scaler = StandardScaler()
-    word2vec_result = scaler.fit_transform(word2vec['word2vec_train'])
-    return np.array(word2vec_result).reshape(-1, 100)
+    vocab = list(word2vec_model.wv.key_to_index.keys())
+    filtered_tokens = filter_vocab_words(token_list, vocab)
+    sentence_vector = get_mean_vector(filtered_tokens, word2vec_model)
+
+    return sentence_vector.reshape(1, -1)
     
 def filter_vocab_words(text, vocabulary):
     return [word for word in text if word in vocabulary]
