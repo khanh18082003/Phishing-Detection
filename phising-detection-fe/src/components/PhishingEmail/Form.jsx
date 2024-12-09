@@ -29,8 +29,8 @@ const Form = (props) => {
         },
       })
       .then((response) => {
-        console.log("Prediction result:", response.data.prediction);
-        setResult(response.data.prediction);
+        console.log("Prediction result:", response.data);
+        setResult(response.data.prediction + " - " + response.data.result);
         setVisible(true);
       })
       .catch((error) => {
